@@ -9,6 +9,9 @@ class MetaBase(nn.Module):
     @abstractmethod
     def arrange_parameter(self, weight):
         raise NotImplemented("")
+    @abstractmethod
+    def report_parameter(self):
+        raise NotImplemented("")
 
 
 class MetaConv3d(MetaBase):
@@ -18,8 +21,11 @@ class MetaConv3d(MetaBase):
                                stride=stride, padding=padding)
 
     def arrange_parameter(self, weight):
-        self.layer.weight.data = weight[0]
-        self.layer.bias.data = weight[1]
+        self.layer.weight.data = weight[0][0:self.layer.weight.data.numel()].view(self.layer.weight.data.shape)
+        self.layer.bias.data = weight[0][self.layer.weight.data.numel():].view(self.layer.bias.data.shape)
+
+    def report_parameter(self):
+        return (self.layer.weight.data.numel()+self.layer.bias.data.numel(),)
 
     def forward(self, x):
         return self.layer(x)
@@ -31,8 +37,11 @@ class MetaBatchNorm3d(MetaBase):
         self.layer = nn.BatchNorm3d(input)
 
     def arrange_parameter(self, weight):
-        self.layer.weight.data = weight[0]
-        self.layer.bias.data = weight[1]
+        self.layer.weight.data = weight[0][0:self.layer.weight.data.numel()].view(self.layer.weight.data.shape)
+        self.layer.bias.data = weight[0][self.layer.weight.data.numel():].view(self.layer.weight.data.shape)
+
+    def report_parameter(self):
+        return (self.layer.weight.data.numel()+self.layer.bias.data.numel(),)
 
     def forward(self, x):
         return self.layer(x)
@@ -46,7 +55,7 @@ def down_conv_layer(in_channels, out_channels):
     return MetaConv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=2, padding=1)
 
 
-class ResBlock(MetaBase):
+class MetaResBlock(MetaBase):
     def __init__(self, channels):
         super().__init__()
         self.layers = nn.ModuleList([
@@ -63,6 +72,10 @@ class ResBlock(MetaBase):
         self.layers[3].arrange_parameter(weight[2])
         self.layers[4].arrange_parameter(weight[3])
 
+    def report_parameter(self):
+        return (self.layers[0].report_parameter(), self.layers[1].report_parameter(),
+                self.layers[3].report_parameter(), self.layers[4].report_parameter())
+
     def forward(self, x):
         residual = x
         for model in self.layers:
@@ -70,7 +83,7 @@ class ResBlock(MetaBase):
         return F.relu(residual + x)
 
 
-class MetaResblock(MetaBase):
+class MetaResnet(MetaBase):
     def __init__(self, net_architecture):
         super().__init__()
         layers = []
@@ -80,7 +93,7 @@ class MetaResblock(MetaBase):
                     nn.Conv3d(in_channels=component[1]["in_channels"], out_channels=component[1]["out_channels"],
                               kernel_size=7, stride=(1, 2, 2), padding=3))
             elif component[0] == "resblock":
-                layers.extend([ResBlock(component[1]["channels"]) for _ in range(component[1]["repeat"])])
+                layers.extend([MetaResBlock(component[1]["channels"]) for _ in range(component[1]["repeat"])])
             elif component[0] == "down_conv":
                 layers.append(
                     down_conv_layer(in_channels=component[1]["in_channels"], out_channels=component[1]["out_channels"]))
@@ -105,9 +118,19 @@ class MetaResblock(MetaBase):
                 model.arrange_parameter(weight[idx])
             if isinstance(model, MetaConv3d):
                 model.arrange_parameter(weight[idx])
-            if isinstance(model, MetaResblock):
+            if isinstance(model, MetaResBlock):
                 model.arrange_parameter(weight[idx])
             idx += 1
+    def report_parameter(self):
+        paras = []
+        for model in self.layers:
+            if isinstance(model, MetaBatchNorm3d):
+                paras.append(model.report_parameter())
+            if isinstance(model, MetaConv3d):
+                paras.append(model.report_parameter())
+            if isinstance(model, MetaResBlock):
+                paras.append(model.report_parameter())
+        return tuple(paras)
 
     def forward(self, x):
         for module in self.layers:
