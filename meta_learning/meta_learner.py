@@ -1,6 +1,7 @@
 import math
 
 import torch
+import numpy as np
 import torch.nn as nn
 
 
@@ -61,18 +62,38 @@ class MultiHeadAttention(nn.Module):
 class PositionalWiseFeedForward(nn.Module):
     def __init__(self, model_dim, ffn_dim=2048, dropout=0.):
         super().__init__()
-        self.w1 = nn.Conv1d(model_dim, ffn_dim, 1)
-        self.w2 = nn.Conv1d(model_dim, ffn_dim, 1)
+        self.w1 = nn.Linear(model_dim, ffn_dim)
+        self.w2 = nn.Linear(ffn_dim, model_dim)
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = nn.LayerNorm(model_dim)
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        output = x.transpose(1, 2)
-        output = self.w2(self.relu(self.w1(output)))
-        output = self.dropout(output.transpose(1, 2))
+        output = self.w2(self.relu(self.w1(x)))
+        output = self.dropout(output)
         output = self.layer_norm(output + x)
         return output
+
+
+class PositionalEncoding(nn.Module):
+    """
+        Require: expect the model_dim to be even
+    """
+
+    def __init__(self, model_dim, max_seq_len):
+        super().__init__()
+        assert model_dim % 2 == 0
+        positional_encoding = torch.zeros(max_seq_len, model_dim)
+        position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, model_dim, 2).float() * (-math.log(10000.0) / model_dim))
+        positional_encoding[:, 0::2] = torch.sin(position * div_term)
+        positional_encoding[:, 1::2] = torch.cos(position * div_term)
+        positional_encoding = positional_encoding.unsqueeze(0).transpose(0, 1)
+        # pe.requires_grad = False
+        self.register_buffer('positional_encoding', positional_encoding)
+
+    def forward(self, x):
+        return x + self.positional_encoding.to(x.device)
 
 
 class EncoderLayer(nn.Module):
@@ -81,10 +102,39 @@ class EncoderLayer(nn.Module):
         self.attention = MultiHeadAttention(model_dim, num_heads, dropout)
         self.feed_forward = PositionalWiseFeedForward(model_dim, ffn_dim, dropout)
 
-    def forward(self, inputs, attention_mask = None):
+    def forward(self, inputs, attention_mask=None):
         context = self.attention(inputs, inputs, inputs, attention_mask)
         output = self.feed_forward(context)
         return output
 
-class Encoder(nn.Module):
-    def __init__(self, ):
+
+class MetaEncoder(nn.Module):
+    def __init__(self, subnet_layers, features_per_layer, feature_overlap, num_layers=6, model_dim=512, num_heads=8,
+                 ffn_dim=2048, dropout=0.):
+        super().__init__()
+        self.encoders = nn.ModuleList(
+            [EncoderLayer(model_dim=model_dim, num_heads=num_heads, ffn_dim=ffn_dim, dropout=dropout) for _ in
+             range(num_layers)]
+        )
+        self.subnet_layers = subnet_layers
+        self.features_per_layer = features_per_layer
+        self.feature_overlap = feature_overlap
+        vocab_size = subnet_layers * features_per_layer - feature_overlap * (subnet_layers - 1)
+        self.seq_embedding = nn.Embedding(vocab_size, model_dim, padding_idx=0)
+        self.positional_encoding = PositionalEncoding(model_dim=model_dim, max_seq_len=subnet_layers)
+        self.input = None
+
+    def forward(self):
+        if self.input is None:
+            self.input = torch.zeros(self.subnet_layers, self.features_per_layer, requires_grad=False).long()
+            mark = self.feature_overlap
+            for i in range(self.subnet_layers):
+                mark -= self.feature_overlap
+                for j in range(self.features_per_layer):
+                    self.input[i, j] = mark
+                    mark += 1
+        out = self.seq_embedding(self.input)
+        out = self.positional_encoding(out)
+        for encoder in self.encoders:
+            out = encoder(out)
+        return out
