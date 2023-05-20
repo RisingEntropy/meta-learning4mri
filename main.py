@@ -2,12 +2,9 @@ import torch
 import torch.nn as nn
 import torchsummary
 
-from meta_learning.resnet import MetaResblock, ResBlock
+from meta_learning.meta_resnet import MetaResnet
+from meta_learning.meta_transformer import MetaEncoder
 from meta_learning.resnet_architecture import resnet34
 
-# net = ResNet(net_architecture=resnet34).cuda()
-# torchsummary.summary(net, (3, 40, 224, 224))
-# # for model in net.modules():
-# #     print(model)
-net = ResBlock(10)
-net(torch.rand(1,10,3,4,5))
+net = nn.BatchNorm3d(64)
+print(net.bias.data.shape)

@@ -1,5 +1,12 @@
 resnet34 = [
-    ("conv7", {"in_channels": 3, "out_channels": 64}),
+    ("conv", {"in_channels": 3, "out_channels": 64, "kernel_size":3}),
+    ("bn", {"input":64}),
+    ("conv", {"in_channels": 64, "out_channels": 64, "kernel_size":3}),
+    ("bn", {"input":64}),
+    ("conv", {"in_channels": 64, "out_channels": 64, "kernel_size":3}),
+    # use 3 3x3x3 convolution to replace 7x7 conv
+    ("bn", {"input":64}),
+
     ("max_pool", {"kernel_size": 3, "stride": 2, "padding": 1}),
 
     ("resblock", {"channels": 64, "repeat": 3}),

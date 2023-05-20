@@ -88,7 +88,7 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, model_dim, 2).float() * (-math.log(10000.0) / model_dim))
         positional_encoding[:, 0::2] = torch.sin(position * div_term)
         positional_encoding[:, 1::2] = torch.cos(position * div_term)
-        positional_encoding = positional_encoding.unsqueeze(0).transpose(0, 1)
+        positional_encoding = positional_encoding.unsqueeze(0)
         # pe.requires_grad = False
         self.register_buffer('positional_encoding', positional_encoding)
 
@@ -109,7 +109,7 @@ class EncoderLayer(nn.Module):
 
 
 class MetaEncoder(nn.Module):
-    def __init__(self, subnet_layers, features_per_layer, feature_overlap, num_layers=6, model_dim=512, num_heads=8,
+    def __init__(self, subnet_layers, features_per_layer, num_layers=6, model_dim=512, num_heads=8,
                  ffn_dim=2048, dropout=0.):
         super().__init__()
         self.encoders = nn.ModuleList(
@@ -118,23 +118,12 @@ class MetaEncoder(nn.Module):
         )
         self.subnet_layers = subnet_layers
         self.features_per_layer = features_per_layer
-        self.feature_overlap = feature_overlap
-        vocab_size = subnet_layers * features_per_layer - feature_overlap * (subnet_layers - 1)
-        self.seq_embedding = nn.Embedding(vocab_size, model_dim, padding_idx=0)
         self.positional_encoding = PositionalEncoding(model_dim=model_dim, max_seq_len=subnet_layers)
-        self.input = None
+        self.input = nn.Parameter(data=torch.Tensor(1, subnet_layers, model_dim), requires_grad=True)
+        nn.init.kaiming_normal_(self.input.data, mode="fan_out")
 
     def forward(self):
-        if self.input is None:
-            self.input = torch.zeros(self.subnet_layers, self.features_per_layer, requires_grad=False).long()
-            mark = self.feature_overlap
-            for i in range(self.subnet_layers):
-                mark -= self.feature_overlap
-                for j in range(self.features_per_layer):
-                    self.input[i, j] = mark
-                    mark += 1
-        out = self.seq_embedding(self.input)
-        out = self.positional_encoding(out)
+        out = self.positional_encoding(self.input)
         for encoder in self.encoders:
             out = encoder(out)
         return out
