@@ -14,8 +14,8 @@ def leaf_node_counter(node):
     :param node:
     :return:
     """
-    if isinstance(node, int):
-        return node
+    if isinstance(node, dict):
+        return node["total"]
     nodes = []
     for item in node:
         if isinstance(item, int):
@@ -33,18 +33,18 @@ def build_parameter_tree(nodes, para_list, index=0):
     :param index:
     :return:
     """
-    if isinstance(nodes, int):
+    if isinstance(nodes, dict):
         return para_list[index], index + 1
     para_tree = []
     for node in nodes:
-        if isinstance(node, int):
+        if isinstance(node, dict):
             para_tree.append(para_list[index])
             index += 1
         elif isinstance(node, tuple) or isinstance(node, list):
             to_add, index = build_parameter_tree(node, para_list, index)
             para_tree.append(to_add)
+            index = index
     return para_tree, index
-
 
 class MetaLearningBase:
     @abstractmethod

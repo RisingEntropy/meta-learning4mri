@@ -48,7 +48,7 @@ class MetaResnet(MetaBase):
         for component in net_architecture:
             if component[0] == "conv":
                 layers.append(
-                    nn.Conv3d(in_channels=component[1]["in_channels"], out_channels=component[1]["out_channels"],
+                    MetaConv3d(in_channels=component[1]["in_channels"], out_channels=component[1]["out_channels"],
                               kernel_size=component[1]["kernel_size"], stride=1, padding=1))
             elif component[0] == "resblock":
                 layers.extend([MetaResBlock(component[1]["channels"]) for _ in range(component[1]["repeat"])])
