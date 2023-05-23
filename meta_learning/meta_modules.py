@@ -19,6 +19,8 @@ class MetaConv3d(MetaBase):
         self.layer = nn.Conv3d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
                                stride=stride, padding=padding, bias=bias)
         self.bias = bias
+        self.in_channels = in_channels
+        self.out_channels = out_channels
 
     def arrange_parameter(self, weight):
         if self.bias:
@@ -29,10 +31,12 @@ class MetaConv3d(MetaBase):
 
     def allocate_parameter(self):
         if self.bias:
-            return {"total": self.layer.weight.data.numel(), "type": "conv"}, {"total": self.layer.bias.data.numel(),
-                                                                               "type": "bias"}
+            return {"total": self.layer.weight.data.numel(), "type": "conv", "in_channels": self.in_channels,
+                    "out_channels": self.out_channels}, {"total": self.layer.bias.data.numel(),
+                                                         "type": "bias"}
         else:
-            return {"total": self.layer.weight.data.numel(), "type": "conv"}
+            return {"total": self.layer.weight.data.numel(), "type": "conv", "in_channels": self.in_channels,
+                    "out_channels": self.out_channels}
 
     def forward(self, x):
         return self.layer(x)
@@ -67,3 +71,6 @@ class MetaLinear(MetaBase):
     def allocate_parameter(self):
         return {"total": self.layer.weight.data.numel(), "type": "fc"}, {"total": self.layer.bias.data.numel(),
                                                                          "type": "bias"}
+
+    def forward(self, x):
+        return self.layer(x)

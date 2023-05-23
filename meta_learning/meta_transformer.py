@@ -109,21 +109,18 @@ class EncoderLayer(nn.Module):
 
 
 class MetaEncoder(nn.Module):
-    def __init__(self, subnet_layers, features_per_layer, num_layers=6, model_dim=512, num_heads=8,
+    def __init__(self, subnet_layers, total_feature, num_layers=6, model_dim=512, num_heads=8,
                  ffn_dim=2048, dropout=0.):
         super().__init__()
         self.encoders = nn.ModuleList(
             [EncoderLayer(model_dim=model_dim, num_heads=num_heads, ffn_dim=ffn_dim, dropout=dropout) for _ in
              range(num_layers)]
         )
-        self.subnet_layers = subnet_layers
-        self.features_per_layer = features_per_layer
+        self.embedding = nn.Embedding(total_feature, model_dim)
         self.positional_encoding = PositionalEncoding(model_dim=model_dim, max_seq_len=subnet_layers)
-        self.input = nn.Parameter(data=torch.Tensor(1, subnet_layers, model_dim), requires_grad=True)
-        nn.init.kaiming_normal_(self.input.data, mode="fan_out")
 
-    def forward(self):
-        out = self.positional_encoding(self.input)
+    def forward(self, input):
+        out = self.positional_encoding(self.embedding(input))
         for encoder in self.encoders:
             out = encoder(out)
         return out
